@@ -3,7 +3,8 @@ __author__ = 'drew'
 from pymongo import MongoClient
 from bson.objectid import ObjectId
 
-
+DEFAULT_LATITUDE = 3
+DEFAULT_LONGITUDE = 3
 
 def move_north(user_id):
     print user_id
@@ -75,11 +76,9 @@ def get_user(username):
         return user
     else:
         print "Creating user: " + username
-        start_latitude = 25
-        start_longitude = 25
-        db.users.insert({'user': username, 'latitude' : start_latitude, 'longitude' : start_longitude})
+        db.users.insert({'user': username, 'latitude': DEFAULT_LATITUDE, 'longitude': DEFAULT_LONGITUDE})
 
-        user = db.users.find_one({'user' : username})
+        user = db.users.find_one({'user': username})
         print user
         return user
 
@@ -88,14 +87,25 @@ def get_terrain(longitude, latitude):
     db = client.test_database
 
     print "Getting tile for " + str(longitude) + ", " + str(latitude)
-    return db.map.find_one({'longitude' : longitude, 'latitude' : latitude})
+    return db.map.find_one({'longitude': longitude, 'latitude' : latitude})
 
-def get_mini_map(longitude, latitude):
+def get_mini_map(user):
+    longitude = user['longitude']
+    latitude = user['latitude']
     client = MongoClient('localhost', 27017)
     db = client.test_database
 
-    tile_cursor = db.map.find({'longitude': {'$lt' : longitude + 2, '$gt' : longitude - 2},
-                              'latitude': {'$lt' : latitude + 2, '$gt' : latitude - 2}})
+    print "Searching for longitude less than " + str(longitude + 2) + " and greater than " + str(longitude - 2)
+    print "Searching for latitude less than " + str(latitude + 2) + " and greater than " + str(latitude - 2)
+
+    tile_cursor = db.map.find({'longitude': {'$lt': longitude + 2, '$gt': longitude - 2},
+                              'latitude': {'$lt': latitude + 2, '$gt': latitude - 2}})
+
+    if tile_cursor.count() == 0:
+            print "Off the map!"
+            db.users.update({'_id': ObjectId(user['_id'])}, {'latitude': DEFAULT_LATITUDE, 'longitude': DEFAULT_LONGITUDE}, upsert=False)
+
+            return get_mini_map(db.users.find_one({'_id': ObjectId(user['_id'])}))
 
     #I want to store the minimap in a format relative to the center
     # for example south will be a position 0,-1
@@ -110,11 +120,17 @@ def get_mini_map(longitude, latitude):
         else:
             mini_map[relative_longitude] = {relative_latitude : tile}
 
-    print "North: " + str(mini_map[0][1]['color'])
-    print "NorthEast: " + str(mini_map[1][1]['color'])
-    print "SouthEast: " + str(mini_map[1][0]['color'])
-    print "South: " + str(mini_map[0][-1]['color'])
-    print "SouthWest: " + str(mini_map[-1][-1]['color'])
-    print "NorthWest: " + str(mini_map[-1][0]['color'])
+    if 0 in mini_map and 1 in mini_map[0]:
+        print "North: " + str(mini_map[0][1]['color'])
+    if 1 in mini_map and 1 in mini_map[1]:
+        print "NorthEast: " + str(mini_map[1][1]['color'])
+    if 1 in mini_map and 0 in mini_map[1]:
+        print "SouthEast: " + str(mini_map[1][0]['color'])
+    if 0 in mini_map and -1 in mini_map[0]:
+        print "South: " + str(mini_map[0][-1]['color'])
+    if -1 in mini_map and -1 in mini_map[-1]:
+        print "SouthWest: " + str(mini_map[-1][-1]['color'])
+    if -1 in mini_map and 0 in mini_map[-1]:
+        print "NorthWest: " + str(mini_map[-1][0]['color'])
 
     return mini_map
